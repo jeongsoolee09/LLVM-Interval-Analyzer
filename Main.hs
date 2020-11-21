@@ -11,8 +11,6 @@ import LLVM.AST
 import Options.Applicative
 import Data.Semigroup ((<>))
 
-import Debug.Trace
-
 onePass :: CFG -> IO ()
 onePass cfg =
       let table = analyze cfg in do
