@@ -185,24 +185,24 @@ stateOrder s1 s2 = foldlWithKey (\acc var inter1 ->
                                     interOrder inter1 (findState var s2) && acc) True s1
 
 
--- | Joins two states pointwise. The default value is Bot.
+-- | Join two states pointwise. The default value is Bot.
 stateJoin :: State -> State -> State
 stateJoin s1 s2 =
   let newState = empty
-      state' = foldlWithKey (\acc k v ->
+      state'   = foldlWithKey (\acc k v ->
                                   bindState k v acc) newState s2
-      state'' = foldlWithKey (\acc k v1 ->
+      state''  = foldlWithKey (\acc k v1 ->
                                   bindState k (interJoin v1 (findState k acc)) acc) state' s1 in
     state''
 
 
--- | statewise widening defaults to join operation.
+-- | statewise widening. 
 stateWiden :: State -> State -> State
 stateWiden s1 s2 =
   let newState = empty
-      state' = foldlWithKey (\acc k v ->
+      state'   = foldlWithKey (\acc k v ->
                                 bindState k v acc) newState s2
-      state'' = foldlWithKey (\acc k v ->
+      state''  = foldlWithKey (\acc k v ->
                                 bindState k (interWiden v (findState k acc)) acc) state' s1 in
     state''
 

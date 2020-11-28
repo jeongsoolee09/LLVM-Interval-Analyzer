@@ -62,9 +62,9 @@ transferInst state instr = case instr of
   _ := LLVM.AST.Instruction.Add _ _ _ _ _  -> transferInstAdd state instr
   _ := LLVM.AST.Instruction.Sub _ _ _ _ _  -> transferInstSub state instr
   _ := LLVM.AST.Instruction.Mul _ _ _ _ _  -> transferInstMul state instr
-  _ := LLVM.AST.Instruction.ICmp _ _ _ _ -> transferInstICmp state instr
-  _ := LLVM.AST.Instruction.Phi _ _ _  -> transferInstPhi state instr
-  _ -> state -- call은 아직 지원 안함
+  _ := LLVM.AST.Instruction.ICmp _ _ _ _   -> transferInstICmp state instr
+  _ := LLVM.AST.Instruction.Phi _ _ _      -> transferInstPhi state instr
+  _ -> state -- TODO Call instruction 시 Summary Creation & Application 메커니즘 trigger
 
 
 transferBlock :: State -> [Named Instruction] -> State
