@@ -1,6 +1,6 @@
 module Main where
 
-import Fixpoint
+import Analyze
 import Program
 import Domain
 
