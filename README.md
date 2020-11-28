@@ -10,15 +10,15 @@ This repo contains a toy interval (static) analyzer targeting the LLVM IR.
 
 ```$ curl -sSL https://get.haskellstack.org/ | sh```
 
-### install packages
+### Install packages
 
 ```$ stack install aeson llvm-hs optparse-applicative```
 
-### compile
+### Compile
 
 ```$ stack ghc main.hs```
 
-### run
+### Run
 
 ```$ main -i {your input .ll file}```
 
