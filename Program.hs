@@ -12,7 +12,6 @@ import qualified Data.List.NonEmpty as NonEmptyList
 import qualified Data.ByteString.Short as ByteString (fromShort)
 import qualified Data.ByteString.UTF8 as ByteString (toString)
 
-
 type Node = LLVMIR.BasicBlock
 
 
@@ -167,6 +166,7 @@ getTerminator (LLVMIR.BasicBlock _ _ (A.Do terminator)) = terminator
 getTerminator (LLVMIR.BasicBlock _ _ (_ A.:= terminator)) = terminator
   
 
+-- | Get the successor blocks of a given block.
 getSuccsOfBlock :: [Node] -> Node -> [Node]
 getSuccsOfBlock blockPool targetBlock =
   let terminator = getTerminator targetBlock in
@@ -251,12 +251,10 @@ predOfBlock cfg node =
       Nothing       -> []
 
 
-lookupWithExn :: (Ord a, Show a) => a -> Map a b -> b
+lookupWithExn :: (Ord k, Show k) => k -> Map k a -> a
 lookupWithExn key mapVal =
-  case Data.Map.lookup key mapVal of
-    Just sth -> sth
-    Nothing  -> error $ "Lookup for " ++ show key ++ " has failed"
-
+  Data.Map.findWithDefault (error $ "Lookup for " ++ show key ++ " has failed") key mapVal
+  
 
 getBasicBlockName :: Node -> LLVMIR.Name
 getBasicBlockName (LLVMIR.BasicBlock name _ _) = name

@@ -5,7 +5,7 @@ module Domain where
 import Program
 
 import Data.Map
-import Numeric.IEEE
+import Numeric.IEEE (nan, infinity)
 import qualified LLVM.IRBuilder.Instruction as LLVMIR
 import qualified LLVM.AST.Global as LLVMIR
 

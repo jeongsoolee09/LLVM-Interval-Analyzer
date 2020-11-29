@@ -11,9 +11,9 @@ import LLVM.AST
 import Options.Applicative
 import Data.Semigroup ((<>))
 
-onePass :: CFG -> IO ()
-onePass cfg =
-      let table = analyze cfg in do
+onePass :: [CFG] -> CFG -> IO ()
+onePass cfgPool cfg =
+      let table = analyze cfgPool cfg in do
         putStrLn $ "Analysis of " ++ (getFid cfg) ++ " begins...\n"
         putStrLn ""
         putStrLn $ "Analysis Results for: " ++ (getFid cfg)
@@ -21,10 +21,10 @@ onePass cfg =
         putStrLn ""
 
 
-multiPass :: [CFG] -> IO ()
-multiPass [] = return ()
-multiPass (cfg:cfgs) = do
-  onePass cfg >> multiPass cfgs
+multiPass :: [CFG] -> [CFG] -> IO ()
+multiPass _ [] = return ()
+multiPass cfgPool (cfg:cfgs) = do
+  onePass cfgPool cfg >> multiPass cfgPool cfgs
 
 
 data Options = Options {filePath :: String}
@@ -33,7 +33,7 @@ data Options = Options {filePath :: String}
 getFilePath :: Options -> String
 getFilePath (Options filePath) = filePath
 
-  
+
 main :: IO ()
 main = do
   args <- execParser $ info (Options <$>
@@ -47,4 +47,4 @@ main = do
   rawModule <- readFile (getFilePath args)
   pureModule <- withContext $ \context -> withModuleFromLLVMAssembly context rawModule moduleAST
   let myModule = Program.newModule pureModule in
-    multiPass (getCFGs myModule)
+    multiPass (getCFGs myModule) (getCFGs myModule)

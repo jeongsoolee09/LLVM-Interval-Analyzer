@@ -5,12 +5,13 @@ import Domain
 import Worklist
 import Data.Map (lookup)
 
-import LLVM.AST.Instruction
+import LLVM.AST.Instruction as LLVMIR
 import LLVM.AST.Type
 import LLVM.AST.Global
-import LLVM.AST.Operand
+import LLVM.AST.Operand as LLVMIR
 import LLVM.AST.Constant
 import LLVM.AST.IntegerPredicate
+import LLVM.AST.Name
 import Data.Foldable (foldl')
 
 evalArgument :: Operand -> State -> Interval
@@ -21,28 +22,28 @@ evalArgument operand state =
 
 
 transferInstAdd :: State -> Named Instruction -> State
-transferInstAdd state (name := LLVM.AST.Instruction.Add _ _ op0 op1 _) =
+transferInstAdd state (name := LLVMIR.Add _ _ op0 op1 _) =
   let op0Inter = evalArgument op0 state
       op1Inter = evalArgument op1 state in
   bindState (show name) (interPlus op0Inter op1Inter) state
   
 
 transferInstSub :: State -> Named Instruction -> State
-transferInstSub state (name := LLVM.AST.Instruction.Sub _ _ op0 op1 _) =
+transferInstSub state (name := LLVMIR.Sub _ _ op0 op1 _) =
   let op0Inter = evalArgument op0 state
       op1Inter = evalArgument op1 state in
   bindState (show name) (interMinus op0Inter op1Inter) state
 
 
 transferInstMul :: State -> Named Instruction -> State
-transferInstMul state (name := LLVM.AST.Instruction.Mul _ _ op0 op1 _) =
+transferInstMul state (name := LLVMIR.Mul _ _ op0 op1 _) =
   let op0Inter = evalArgument op0 state
       op1Inter = evalArgument op1 state in
   bindState (show name) (interMult op0Inter op1Inter) state
 
 
 transferInstICmp :: State -> Named Instruction -> State
-transferInstICmp state (name := LLVM.AST.Instruction.ICmp iPred op0 op1 _) =
+transferInstICmp state (name := LLVMIR.ICmp iPred op0 op1 _) =
   let op0Inter = evalArgument op0 state
       op1Inter = evalArgument op1 state in
   let itv = (case iPred of
@@ -52,31 +53,70 @@ transferInstICmp state (name := LLVM.AST.Instruction.ICmp iPred op0 op1 _) =
 
 
 transferInstPhi :: State -> Named Instruction -> State
-transferInstPhi state (name := LLVM.AST.Instruction.Phi _ inVals _) =
+transferInstPhi state (name := LLVMIR.Phi _ inVals _) =
   let inVals_ = map (\(x, y) -> x) inVals
       inter    = foldl' (\acc elem -> interJoin acc (evalArgument elem state)) Bot inVals_ in
     bindState (show name) inter state
 
 
-transferInstCall :: State -> Named Instruction -> State
-transferInstCall state (name := LLVM.AST.Instruction.Call _ _ _ callee args _ _) =
-  undefined
+transferInstCall :: [CFG] -> State -> Named Instruction -> State
+transferInstCall cfgPool state (name := LLVMIR.Call _ _ _ callee args _ _) =
+  let args'      = map (\(x, y) -> x) args -- :: extract only the [Operand]
+      calleeCFG  = findCFGByName callee cfgPool
+      calleeTbl  = analyze cfgPool calleeCFG 
+      retState   = findRetState calleeTbl
+      retBlock   = findRetBlock calleeCFG
+      retInstr   = findRetInstr retBlock
+      retOperand = findRetOperand retInstr
+      retIntv    = lookupWithExn retOperand retState in
+    bindState (show name) retIntv state
+    
+
+findRetState :: Table -> State
+findRetState = undefined
 
 
-transferInst :: State -> Named Instruction -> State
-transferInst state instr = case instr of
-  _ := LLVM.AST.Instruction.Add _ _ _ _ _      -> transferInstAdd state instr
-  _ := LLVM.AST.Instruction.Sub _ _ _ _ _      -> transferInstSub state instr
-  _ := LLVM.AST.Instruction.Mul _ _ _ _ _      -> transferInstMul state instr
-  _ := LLVM.AST.Instruction.ICmp _ _ _ _       -> transferInstICmp state instr
-  _ := LLVM.AST.Instruction.Phi _ _ _          -> transferInstPhi state instr
-  _ := LLVM.AST.Instruction.Call _ _ _ _ _ _ _ -> transferInstCall state instr
+findRetBlock :: CFG -> Node
+findRetBlock = undefined
+
+
+findRetInstr :: Node -> Named Instruction
+findRetInstr = undefined
+
+
+findRetOperand :: Named Instruction -> String
+findRetOperand = undefined
+
+
+findCFGByName :: LLVMIR.CallableOperand -> [CFG] -> CFG
+findCFGByName (Left _) _ = error "Inline assembly not supported"
+findCFGByName (Right operand) cfgPool =
+  case operand of
+    LocalReference _ name ->
+      let matches = foldl (\acc cfg ->
+                                if fid cfg == (show name) then cfg:acc else acc) [] cfgPool in
+        case matches of
+          []     -> error "could not find such CFG"
+          [cfg]  -> cfg
+          (x:xs) -> error "multiple CFGs exist with that name"
+    ConstantOperand _     -> error "Constant callable operand not supported"
+    MetadataOperand _     -> error "Metadata callable operand not supported"
+
+
+transferInst :: [CFG] -> State -> Named Instruction -> State
+transferInst cfgPool state instr = case instr of
+  _ := LLVMIR.Add _ _ _ _ _      -> transferInstAdd state instr
+  _ := LLVMIR.Sub _ _ _ _ _      -> transferInstSub state instr
+  _ := LLVMIR.Mul _ _ _ _ _      -> transferInstMul state instr
+  _ := LLVMIR.ICmp _ _ _ _       -> transferInstICmp state instr
+  _ := LLVMIR.Phi _ _ _          -> transferInstPhi state instr
+  _ := LLVMIR.Call _ _ _ _ _ _ _ -> transferInstCall cfgPool state instr
   _ -> state
 
 
 -- | Transfer a whole block.
-transferBlock :: State -> [Named Instruction] -> State
-transferBlock state instrs = foldl' (\acc instr -> transferInst acc instr) state instrs
+transferBlock :: [CFG] -> State -> [Named Instruction] -> State
+transferBlock cfgPool state instrs = foldl' (\acc instr -> transferInst cfgPool acc instr) state instrs
 
 
 getParamName :: Parameter -> String
@@ -92,28 +132,29 @@ inputOf here cfg table =
                       let res = findTable param table in
                       stateJoin res acc) emptyState (predOfBlock cfg here)
 
+
 needWiden :: Node -> Bool
 needWiden _ = True
 
 
 -- | The core worklist algorithm.
-analyzeInner :: CFG -> Table -> Worklist -> Table
-analyzeInner _ table [] = table
-analyzeInner cfg table wklist =
+analyzeInner :: [CFG] -> CFG -> Table -> Worklist -> Table
+analyzeInner _ _ table [] = table
+analyzeInner cfgPool cfg table wklist =
   let (here, wklist') = pop wklist
       state           = inputOf here cfg table
-      state'          = transferBlock state (getInstrs here)
+      state'          = transferBlock cfgPool state (getInstrs here)
       oldState        = findTable here table in
     if not $ stateOrder state' oldState
     then let table'   = if needWiden here
                         then bindTable here (stateWiden oldState state') table
                         else bindTable here (stateJoin oldState state') table
              wklist'' = addSet wklist' (succOfBlock cfg here) in
-           (analyzeInner cfg table' wklist'')
-    else (analyzeInner cfg table wklist')
+           (analyzeInner cfgPool cfg table' wklist'')
+    else (analyzeInner cfgPool cfg table wklist')
 
 
-analyze :: CFG -> Table
-analyze cfg =
+analyze :: [CFG] -> CFG -> Table
+analyze cfgPool cfg =
   let wklist = addSet newWorklist (getBlocks cfg) in
-    analyzeInner cfg newTable wklist
+    analyzeInner cfgPool cfg newTable wklist
