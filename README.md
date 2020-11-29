@@ -12,7 +12,7 @@ This repo contains a toy interval (static) analyzer targeting the LLVM IR.
 
 ### Install packages
 
-```$ stack install aeson llvm-hs optparse-applicative```
+```$ stack install llvm-hs optparse-applicative ieee754```
 
 ### Compile
 
