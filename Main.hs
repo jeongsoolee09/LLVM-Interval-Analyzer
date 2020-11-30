@@ -13,7 +13,7 @@ import Data.Semigroup ((<>))
 
 onePass :: [CFG] -> CFG -> IO ()
 onePass cfgPool cfg =
-      let table = analyze cfgPool cfg in do
+      let table = analyze [] cfgPool cfg in do
         putStrLn $ "Analysis of " ++ (getFid cfg) ++ " begins...\n"
         putStrLn ""
         putStrLn $ "Analysis Results for: " ++ (getFid cfg)

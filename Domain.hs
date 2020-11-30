@@ -4,11 +4,10 @@ module Domain where
 
 import Program
 
-import Data.Map
+import qualified Data.Map as Map
 import Numeric.IEEE (nan, infinity)
-import qualified LLVM.IRBuilder.Instruction as LLVMIR
 import qualified LLVM.AST.Global as LLVMIR
-
+import qualified LLVM.AST.Operand as LLVMIR
 
 data Interval
   = Top
@@ -35,6 +34,14 @@ getLow _ = nan
 
 interFromInt :: Int -> Interval
 interFromInt concreteInt = Interval (fromIntegral concreteInt) (fromIntegral concreteInt)
+
+
+interFromInteger :: Integer -> Interval
+interFromInteger concreteInt = Interval (fromIntegral concreteInt) (fromIntegral concreteInt)
+
+
+interFromFloat :: Float -> Interval
+interFromFloat concreteFloat = Interval concreteFloat concreteFloat
 
 
 interPlus :: Interval -> Interval -> Interval
@@ -161,37 +168,37 @@ interWiden (Interval v1 v2) (Interval v3 v4)
                                interJoin (Interval v1 v2) (Interval v3 v4)
 
 
-type State = Map String Interval
+type State = Map.Map String Interval
 
 
 emptyState :: State
-emptyState = empty
+emptyState = Map.empty
 
 
 bindState :: String -> Interval -> State -> State
-bindState = insert
+bindState = Map.insert
 
 
 findState :: String -> State -> Interval
 findState var abstractState =
-  case Data.Map.lookup var abstractState of
+  case Map.lookup var abstractState of
     Just interval -> interval
     Nothing   -> Bot
 
 
 -- | True iff s1[var] <= s2[var] for all var.
 stateOrder :: State -> State -> Bool
-stateOrder s1 s2 = foldlWithKey (\acc var inter1 ->
+stateOrder s1 s2 = Map.foldlWithKey (\acc var inter1 ->
                                     interOrder inter1 (findState var s2) && acc) True s1
 
 
 -- | Join two states pointwise. The default value is Bot.
 stateJoin :: State -> State -> State
 stateJoin s1 s2 =
-  let newState = empty
-      state'   = foldlWithKey (\acc k v ->
+  let newState = Map.empty
+      state'   = Map.foldlWithKey (\acc k v ->
                                   bindState k v acc) newState s2
-      state''  = foldlWithKey (\acc k v1 ->
+      state''  = Map.foldlWithKey (\acc k v1 ->
                                   bindState k (interJoin v1 (findState k acc)) acc) state' s1 in
     state''
 
@@ -199,10 +206,10 @@ stateJoin s1 s2 =
 -- | statewise widening. 
 stateWiden :: State -> State -> State
 stateWiden s1 s2 =
-  let newState = empty
-      state'   = foldlWithKey (\acc k v ->
+  let newState = Map.empty
+      state'   = Map.foldlWithKey (\acc k v ->
                                 bindState k v acc) newState s2
-      state''  = foldlWithKey (\acc k v ->
+      state''  = Map.foldlWithKey (\acc k v ->
                                 bindState k (interWiden v (findState k acc)) acc) state' s1 in
     state''
 
@@ -210,30 +217,36 @@ stateWiden s1 s2 =
 -- | Pretty print a state.
 stateToString :: State -> String
 stateToString s
-  | s == empty = "{ }"
-  | otherwise  = foldlWithKey (\acc var sign ->
+  | s == Map.empty = "{ }"
+  | otherwise  = Map.foldlWithKey (\acc var sign ->
                                  acc ++ "\t" ++ var ++ " |-> " ++ (show sign) ++ "\n") "" s
 
 
-type Table = Map Node State
+type Table = Map.Map Node State
 
 
 newTable :: Table
-newTable = empty
+newTable = Map.empty
 
 
 bindTable :: Node -> State -> Table -> Table
-bindTable = insert
+bindTable = Map.insert
 
 
-findTable :: Node -> Table -> State
-findTable node table =
-  case Data.Map.lookup node table of
+batchBindArgs :: [(LLVMIR.Operand, Interval)] -> State -> State
+batchBindArgs argsAndItvs state =
+  foldl (\acc (arg, itv) -> bindState (show arg) itv acc) state argsAndItvs
+
+
+
+findTable :: Node -> Table -> [(LLVMIR.Operand, Interval)] -> State
+findTable node table argsAndItvs =
+  case Map.lookup node table of
     Just state -> state
-    Nothing    -> emptyState
+    Nothing    -> batchBindArgs argsAndItvs emptyState
 
 
 tableToString :: Table -> String
-tableToString table = foldlWithKey (\acc node state ->
+tableToString table = Map.foldlWithKey (\acc node state ->
                                 acc ++ "   " ++ (show $ getName node) ++ "\n"
                                 ++ (stateToString state) ++ "\n") "" table

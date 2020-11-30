@@ -9,7 +9,8 @@ import LLVM.AST.Instruction as LLVMIR
 import LLVM.AST.Type
 import LLVM.AST.Global
 import LLVM.AST.Operand as LLVMIR
-import LLVM.AST.Constant
+import LLVM.AST.Float as LLVMIR
+import LLVM.AST.Constant as Constant
 import LLVM.AST.IntegerPredicate
 import LLVM.AST.Name
 import Data.Foldable (foldl')
@@ -59,33 +60,62 @@ transferInstPhi state (name := LLVMIR.Phi _ inVals _) =
     bindState (show name) inter state
 
 
+evalConst :: Constant -> Interval
+evalConst (Constant.Int _ intVal)    = interFromInteger intVal
+evalConst (Constant.Float floatVal)  =
+  case floatVal of
+    LLVMIR.Single float  -> interFromFloat float
+    LLVMIR.Double double -> interFromFloat (realToFrac double)
+    sth                  -> error $ "not a supported real number: " ++ (show sth)
+evalConst (Constant.Add _ _ op0 op1) = interPlus (evalConst op0) (evalConst op1)
+evalConst (Constant.Sub _ _ op0 op1) = interMinus (evalConst op0) (evalConst op1)
+evalConst (Constant.Mul _ _ op0 op1) = interMult (evalConst op0) (evalConst op1)
+evalConst _                 = error "non-Int/non-Float arg value not supported"
+
+
 transferInstCall :: [CFG] -> State -> Named Instruction -> State
 transferInstCall cfgPool state (name := LLVMIR.Call _ _ _ callee args _ _) =
-  let args'      = map (\(x, y) -> x) args -- :: extract only the [Operand]
-      calleeCFG  = findCFGByName callee cfgPool
-      calleeTbl  = analyze cfgPool calleeCFG 
-      retState   = findRetState calleeTbl
-      retBlock   = findRetBlock calleeCFG
-      retInstr   = findRetInstr retBlock
-      retOperand = findRetOperand retInstr
-      retIntv    = lookupWithExn retOperand retState in
+  let args'       = map (\(x, y) -> x) args
+      argIntvs    = map (\arg ->
+                          case arg of
+                            LocalReference _ name -> lookupWithExn (show name) state -- show name이 맞으려나?
+                            ConstantOperand const -> evalConst const) args'
+      argAndIntvs = zip args' argIntvs
+      calleeCFG   = findCFGByName callee cfgPool
+      calleeTbl   = analyze argAndIntvs cfgPool calleeCFG 
+      retBlock    = findRetBlock calleeCFG
+      retState    = lookupWithExn retBlock calleeTbl
+      retInstr    = getTerminator retBlock
+      retOperand  = findRetOperand retInstr
+      retIntv     = lookupWithExn retOperand retState in
     bindState (show name) retIntv state
-    
-
-findRetState :: Table -> State
-findRetState = undefined
+transferInstCall _ state (Do (LLVMIR.Call _ _ _ _ _ _ _)) = state
 
 
+-- | Does the Block end with Return?
+hasRet :: Node -> Bool
+hasRet (BasicBlock _ _ terminator) =
+  case terminator of
+    Do (Ret _ _) -> True
+    _            -> False
+
+
+-- | Find all blocks ending with Return
 findRetBlock :: CFG -> Node
-findRetBlock = undefined
+findRetBlock cfg =
+  let nodePool  = blocks cfg
+      retBlocks = foldl (\acc node ->
+                           if hasRet node
+                           then node:acc
+                           else acc) [] nodePool in
+    case retBlocks of
+      []     -> error "there are no return blocks; this is impossible."
+      [node] -> node
+      _      -> error "there cannot be multiple return blocks; this is impossible."
 
 
-findRetInstr :: Node -> Named Instruction
-findRetInstr = undefined
-
-
-findRetOperand :: Named Instruction -> String
-findRetOperand = undefined
+findRetOperand :: Terminator -> String
+findRetOperand (Ret operand _) = show operand
 
 
 findCFGByName :: LLVMIR.CallableOperand -> [CFG] -> CFG
@@ -129,7 +159,7 @@ inputOf here cfg table =
     True  -> foldl (\acc param ->
                       bindState (getParamName param) Top acc) emptyState (getParams cfg)
     False -> foldl (\acc param ->
-                      let res = findTable param table in
+                      let res = findTable param table [] in
                       stateJoin res acc) emptyState (predOfBlock cfg here)
 
 
@@ -138,23 +168,23 @@ needWiden _ = True
 
 
 -- | The core worklist algorithm.
-analyzeInner :: [CFG] -> CFG -> Table -> Worklist -> Table
-analyzeInner _ _ table [] = table
-analyzeInner cfgPool cfg table wklist =
+analyzeInner :: [(Operand, Interval)] -> [CFG] -> CFG -> Table -> Worklist -> Table
+analyzeInner _ _ _ table [] = table
+analyzeInner argAndItvs cfgPool cfg table wklist =
   let (here, wklist') = pop wklist
       state           = inputOf here cfg table
       state'          = transferBlock cfgPool state (getInstrs here)
-      oldState        = findTable here table in
+      oldState        = findTable here table argAndItvs in
     if not $ stateOrder state' oldState
     then let table'   = if needWiden here
                         then bindTable here (stateWiden oldState state') table
                         else bindTable here (stateJoin oldState state') table
              wklist'' = addSet wklist' (succOfBlock cfg here) in
-           (analyzeInner cfgPool cfg table' wklist'')
-    else (analyzeInner cfgPool cfg table wklist')
+           (analyzeInner argAndItvs cfgPool cfg table' wklist'')
+    else (analyzeInner argAndItvs cfgPool cfg table wklist')
 
 
-analyze :: [CFG] -> CFG -> Table
-analyze cfgPool cfg =
+analyze :: [(Operand, Interval)] -> [CFG] -> CFG -> Table
+analyze argAndItvs cfgPool cfg =
   let wklist = addSet newWorklist (getBlocks cfg) in
-    analyzeInner cfgPool cfg newTable wklist
+    analyzeInner argAndItvs cfgPool cfg newTable wklist
