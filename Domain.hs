@@ -233,17 +233,17 @@ bindTable :: Node -> State -> Table -> Table
 bindTable = Map.insert
 
 
-batchBindArgs :: [(LLVMIR.Operand, Interval)] -> State -> State
-batchBindArgs argsAndItvs state =
-  foldl (\acc (arg, itv) -> bindState (show arg) itv acc) state argsAndItvs
+batchBindArgs :: [Interval] -> [String] -> State -> State
+batchBindArgs argItvs paramNames state =
+  let paramAndItvs = zip paramNames argItvs in
+    foldl (\acc (paramName, itv) -> bindState paramName itv acc) state paramAndItvs
 
 
-
-findTable :: Node -> Table -> [(LLVMIR.Operand, Interval)] -> State
-findTable node table argsAndItvs =
+findTable :: Node -> Table -> State
+findTable node table =
   case Map.lookup node table of
     Just state -> state
-    Nothing    -> batchBindArgs argsAndItvs emptyState
+    Nothing    -> emptyState
 
 
 tableToString :: Table -> String

@@ -73,7 +73,7 @@ evalConst (Constant.Float floatVal)  =
 evalConst (Constant.Add _ _ op0 op1) = interPlus (evalConst op0) (evalConst op1)
 evalConst (Constant.Sub _ _ op0 op1) = interMinus (evalConst op0) (evalConst op1)
 evalConst (Constant.Mul _ _ op0 op1) = interMult (evalConst op0) (evalConst op1)
-evalConst _                 = error "non-Int/non-Float arg value not supported"
+evalConst _                          = error "non-Int/non-Float arg value not supported"
 
 
 transferInstCall :: [CFG] -> State -> Named Instruction -> State
@@ -83,9 +83,8 @@ transferInstCall cfgPool state (name := LLVMIR.Call _ _ _ callee args _ _) =
                           case arg of
                             LocalReference _ name -> lookupWithExn (show name) state
                             ConstantOperand const -> evalConst const) args'
-      argAndIntvs = zip args' argIntvs
       calleeCFG   = findCFGByName callee cfgPool
-      calleeTbl   = analyze argAndIntvs cfgPool calleeCFG 
+      calleeTbl   = analyze argIntvs cfgPool calleeCFG 
       retBlock    = findRetBlock calleeCFG
       retState    = lookupWithExn retBlock calleeTbl
       retInstr    = getTerminator retBlock
@@ -204,14 +203,18 @@ getParamName :: Parameter -> String
 getParamName (Parameter _ name _) = show name
 
   
-inputOf :: Node -> CFG -> Table -> State
-inputOf here cfg table =
+inputOf :: Node -> CFG -> Table -> [Interval] -> State
+inputOf here cfg table argItvs =
   case isEntry cfg here of
-    True  -> foldl (\acc param ->
-                      bindState (getParamName param) Top acc) emptyState (getParams cfg)
-    False -> foldl (\acc param ->
-                      let res = findTable param table [] in
-                      stateJoin res acc) emptyState (predOfBlock cfg here)
+    True  -> let beforeUpdate = foldl (\acc param ->
+                                         bindState (getParamName param) Top acc) emptyState (getParams cfg)
+                 paramNames   = map (\(Parameter _ name _) -> show name) (getParams cfg) in
+               batchBindArgs argItvs paramNames beforeUpdate
+    False -> let beforeUpdate = foldl (\acc param ->
+                                         let res = findTable param table in
+                                           stateJoin res acc) emptyState (predOfBlock cfg here)
+                 paramNames   = map (\(Parameter _ name _) -> show name) (getParams cfg) in
+               batchBindArgs argItvs paramNames beforeUpdate
 
 
 needWiden :: Node -> Bool
@@ -219,23 +222,23 @@ needWiden _ = True
 
 
 -- | The core worklist algorithm.
-analyzeInner :: [(Operand, Interval)] -> [CFG] -> CFG -> Table -> Worklist -> Table
+analyzeInner :: [Interval] -> [CFG] -> CFG -> Table -> Worklist -> Table
 analyzeInner _ _ _ table [] = table
-analyzeInner argAndItvs cfgPool cfg table wklist =
+analyzeInner argItvs cfgPool cfg table wklist =
   let (here, wklist') = pop wklist
-      state           = inputOf here cfg table
+      state           = inputOf here cfg table argItvs
       state'          = transferBlock cfgPool state (getInstrs here)
-      oldState        = findTable here table argAndItvs in
+      oldState        = findTable here table in
     if not $ stateOrder state' oldState
     then let table'   = if needWiden here
                         then bindTable here (stateWiden oldState state') table
                         else bindTable here (stateJoin oldState state') table
              wklist'' = addSet wklist' (succOfBlock cfg here) in
-           (analyzeInner argAndItvs cfgPool cfg table' wklist'')
-    else (analyzeInner argAndItvs cfgPool cfg table wklist')
+           (analyzeInner argItvs cfgPool cfg table' wklist'')
+    else (analyzeInner argItvs cfgPool cfg table wklist')
 
 
-analyze :: [(Operand, Interval)] -> [CFG] -> CFG -> Table
-analyze argAndItvs cfgPool cfg =
+analyze :: [Interval] -> [CFG] -> CFG -> Table
+analyze argItvs cfgPool cfg =
   let wklist = addSet newWorklist (getBlocks cfg) in
-    analyzeInner argAndItvs cfgPool cfg newTable wklist
+    analyzeInner argItvs cfgPool cfg newTable wklist
