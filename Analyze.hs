@@ -3,7 +3,7 @@ module Analyze where
 import Program
 import Domain
 import Worklist
-import Data.Map (lookup)
+import Data.Map (lookup, delete)
 
 import LLVM.AST.Instruction as LLVMIR
 import LLVM.AST.Type
@@ -15,11 +15,14 @@ import LLVM.AST.IntegerPredicate
 import LLVM.AST.Name
 import Data.Foldable (foldl')
 
+import Debug.Trace
+  
 evalArgument :: Operand -> State -> Interval
 evalArgument operand state =
   case operand of
-    ConstantOperand (Int _ intVal) -> interFromInt $ fromIntegral intVal
+    ConstantOperand const -> evalConst const
     LocalReference _ name -> findState (show name) state
+    _                     -> undefined
 
 
 transferInstAdd :: State -> Named Instruction -> State
@@ -78,7 +81,7 @@ transferInstCall cfgPool state (name := LLVMIR.Call _ _ _ callee args _ _) =
   let args'       = map (\(x, y) -> x) args
       argIntvs    = map (\arg ->
                           case arg of
-                            LocalReference _ name -> lookupWithExn (show name) state -- show name이 맞으려나?
+                            LocalReference _ name -> lookupWithExn (show name) state
                             ConstantOperand const -> evalConst const) args'
       argAndIntvs = zip args' argIntvs
       calleeCFG   = findCFGByName callee cfgPool
@@ -86,13 +89,46 @@ transferInstCall cfgPool state (name := LLVMIR.Call _ _ _ callee args _ _) =
       retBlock    = findRetBlock calleeCFG
       retState    = lookupWithExn retBlock calleeTbl
       retInstr    = getTerminator retBlock
-      retOperand  = findRetOperand retInstr
-      retIntv     = lookupWithExn retOperand retState in
+      retIntv     = findRetInterval retInstr retState in
     bindState (show name) retIntv state
 transferInstCall _ state (Do (LLVMIR.Call _ _ _ _ _ _ _)) = state
 
 
--- | Does the Block end with Return?
+transferInstAlloca :: State -> Named Instruction -> State
+transferInstAlloca state (name := LLVMIR.Alloca _ _ _ _) =
+  bindState (show name) Bot state
+
+
+transferInstLoad :: State -> Named Instruction -> State
+transferInstLoad state (name := LLVMIR.Load _ address _ _ _) =
+  case address of
+    LocalReference _ name' -> let pointerItv = lookupWithExn (show name') state in
+                               bindState (show name) pointerItv state
+    ConstantOperand _     -> error $ "Constant load not supported: " ++ (show address)
+    _                     -> undefined
+  
+
+transferInstStore :: State -> Named Instruction -> State
+transferInstStore state (Do (LLVMIR.Store _ address value _ _ _)) =
+  case value of
+    LocalReference _ valName -> let valueItv = lookupWithExn (show valName) state in
+                                  case address of
+                                    LocalReference _ addressName ->
+                                      -- perform a strong update
+                                      let state' = delete (show addressName) state in
+                                        bindState (show addressName) valueItv state'
+                                    _ -> error $ "Store value not supported: " ++ (show value)
+    ConstantOperand const    -> let valueItv = evalConst const in
+                                  case address of
+                                    LocalReference _ addressName ->
+                                      -- perform a strong update
+                                      let state' = delete (show addressName) state in
+                                        bindState (show addressName) valueItv state'
+                                    _ -> error $ "Store value not supported: " ++ (show value)
+    _                        -> undefined
+
+
+-- | Does the block end with Ret?
 hasRet :: Node -> Bool
 hasRet (BasicBlock _ _ terminator) =
   case terminator of
@@ -114,8 +150,14 @@ findRetBlock cfg =
       _      -> error "there cannot be multiple return blocks; this is impossible."
 
 
-findRetOperand :: Terminator -> String
-findRetOperand (Ret operand _) = show operand
+findRetInterval :: Terminator -> State -> Interval
+findRetInterval (Ret (Just operand) _) state =
+  case operand of
+    LocalReference _ name ->
+      lookupWithExn (show name) state
+    ConstantOperand const -> evalConst const
+    _                     -> undefined
+findRetOperand (Ret Nothing _) = error "There are no return values; this is impossible."
 
 
 findCFGByName :: LLVMIR.CallableOperand -> [CFG] -> CFG
@@ -124,13 +166,19 @@ findCFGByName (Right operand) cfgPool =
   case operand of
     LocalReference _ name ->
       let matches = foldl (\acc cfg ->
-                                if fid cfg == (show name) then cfg:acc else acc) [] cfgPool in
+                             if fid cfg == (show name) then cfg:acc else acc) [] cfgPool in
         case matches of
           []     -> error "could not find such CFG"
           [cfg]  -> cfg
           (x:xs) -> error "multiple CFGs exist with that name"
-    ConstantOperand _     -> error "Constant callable operand not supported"
-    MetadataOperand _     -> error "Metadata callable operand not supported"
+    ConstantOperand (GlobalReference _ name) ->
+      let matches = foldl (\acc cfg ->
+                             if fid cfg == show name then cfg:acc else acc) [] cfgPool in
+        case matches of
+          []     -> error "could not find such CFG"
+          [cfg]  -> cfg
+          (x:xs) -> error "multiple CFGs exist with that name"
+    MetadataOperand _ -> error "Metadata callable operand not supported"
 
 
 transferInst :: [CFG] -> State -> Named Instruction -> State
@@ -141,6 +189,9 @@ transferInst cfgPool state instr = case instr of
   _ := LLVMIR.ICmp _ _ _ _       -> transferInstICmp state instr
   _ := LLVMIR.Phi _ _ _          -> transferInstPhi state instr
   _ := LLVMIR.Call _ _ _ _ _ _ _ -> transferInstCall cfgPool state instr
+  _ := LLVMIR.Alloca _ _ _ _     -> transferInstAlloca state instr
+  _ := LLVMIR.Load _ _ _ _ _     -> transferInstLoad state instr
+  Do (LLVMIR.Store _ _ _ _ _ _)  -> transferInstStore state instr
   _ -> state
 
 
