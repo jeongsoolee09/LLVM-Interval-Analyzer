@@ -31,3 +31,7 @@ This repo contains a toy interval (static) analyzer targeting the LLVM IR.
 ### Not Yet Achieved
 
 1. Extending domain to include access paths
+
+## NOTE
+
+`.ll` files compiled with Clang 12 emits a parse error. Make sure your Clang version is equal to or below 11.
