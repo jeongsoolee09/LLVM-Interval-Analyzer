@@ -189,7 +189,7 @@ findState var abstractState =
 -- | True iff s1[var] <= s2[var] for all var.
 stateOrder :: State -> State -> Bool
 stateOrder s1 s2 = Map.foldlWithKey (\acc var inter1 ->
-                                    interOrder inter1 (findState var s2) && acc) True s1
+                                       interOrder inter1 (findState var s2) && acc) True s1
 
 
 -- | Join two states pointwise. The default value is Bot.
@@ -197,9 +197,9 @@ stateJoin :: State -> State -> State
 stateJoin s1 s2 =
   let newState = Map.empty
       state'   = Map.foldlWithKey (\acc k v ->
-                                  bindState k v acc) newState s2
+                                     bindState k v acc) newState s2
       state''  = Map.foldlWithKey (\acc k v1 ->
-                                  bindState k (interJoin v1 (findState k acc)) acc) state' s1 in
+                                     bindState k (interJoin v1 (findState k acc)) acc) state' s1 in
     state''
 
 
@@ -208,9 +208,9 @@ stateWiden :: State -> State -> State
 stateWiden s1 s2 =
   let newState = Map.empty
       state'   = Map.foldlWithKey (\acc k v ->
-                                bindState k v acc) newState s2
+                                     bindState k v acc) newState s2
       state''  = Map.foldlWithKey (\acc k v ->
-                                bindState k (interWiden v (findState k acc)) acc) state' s1 in
+                                     bindState k (interWiden v (findState k acc)) acc) state' s1 in
     state''
 
 
@@ -219,7 +219,7 @@ stateToString :: State -> String
 stateToString s
   | s == Map.empty = "{ }"
   | otherwise  = Map.foldlWithKey (\acc var sign ->
-                                 acc ++ "\t" ++ var ++ " |-> " ++ (show sign) ++ "\n") "" s
+                                     acc ++ "\t" ++ var ++ " |-> " ++ (show sign) ++ "\n") "" s
 
 
 type Table = Map.Map Node State
@@ -248,5 +248,5 @@ findTable node table =
 
 tableToString :: Table -> String
 tableToString table = Map.foldlWithKey (\acc node state ->
-                                acc ++ "   " ++ (show $ getName node) ++ "\n"
-                                ++ (stateToString state) ++ "\n") "" table
+                                          acc ++ "   " ++ (show $ getName node) ++ "\n"
+                                         ++ (stateToString state) ++ "\n") "" table
