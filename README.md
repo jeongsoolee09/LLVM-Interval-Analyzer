@@ -27,6 +27,7 @@ This repo contains a toy interval (static) analyzer targeting the LLVM IR.
 ### Achieved
 
 1. Top-down interprocedural analysis
-2. Extending domain to include access paths
 
 ### Not Yet Achieved
+
+1. Extending domain to include access paths
