@@ -249,4 +249,4 @@ findTable node table =
 tableToString :: Table -> String
 tableToString table = Map.foldlWithKey (\acc node state ->
                                           acc ++ "   " ++ (show $ getName node) ++ "\n"
-                                         ++ (stateToString state) ++ "\n") "" table
+                                          ++ (stateToString state) ++ "\n") "" table
