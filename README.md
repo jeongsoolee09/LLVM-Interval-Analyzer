@@ -10,6 +10,16 @@ This repo contains a toy interval (static) analyzer targeting the LLVM IR.
 
 ```$ curl -sSL https://get.haskellstack.org/ | sh```
 
+### Install LLVM 9
+
+#### Mac
+
+```$ brew install llvm-hs/llvm/llvm-9```
+
+#### Ubuntu
+
+```$ apt-get install llvm-9-dev```
+
 ### Install packages
 
 ```$ stack install llvm-hs optparse-applicative ieee754```
