@@ -43,7 +43,7 @@ main = do
                              abortOption ShowHelpText (long "help" <>
                                                        short 'h' <>
                                                        help "Display this message."))
-          (progDesc "Intraprocedural sign analyzer." <> fullDesc)
+          (progDesc "Interprocedural sign analyzer." <> fullDesc)
   rawModule <- readFile (getFilePath args)
   pureModule <- withContext $ \context -> withModuleFromLLVMAssembly context rawModule moduleAST
   let myModule = Program.newModule pureModule in
