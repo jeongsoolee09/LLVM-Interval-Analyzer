@@ -234,8 +234,8 @@ analyzeInner argItvs cfgPool cfg table wklist =
                         then bindTable here (stateWiden oldState state') table
                         else bindTable here (stateJoin oldState state') table
              wklist'' = addSet wklist' (succOfBlock cfg here) in
-           (analyzeInner argItvs cfgPool cfg table' wklist'')
-    else (analyzeInner argItvs cfgPool cfg table wklist')
+           analyzeInner argItvs cfgPool cfg table' wklist''
+    else analyzeInner argItvs cfgPool cfg table wklist'
 
 
 analyze :: [Interval] -> [CFG] -> CFG -> Table
